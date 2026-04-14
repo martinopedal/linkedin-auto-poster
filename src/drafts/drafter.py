@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -415,13 +416,15 @@ def generate_draft(
 
     for attempt in range(2):
         try:
-            raw, critique_raw = run_pipeline_sync(
+            t0 = time.time()
+            raw, critique_raw, pipeline_meta = run_pipeline_sync(
                 system_prompt,
                 user_prompt,
                 critic_prompt=critic_system,
                 critic_input="Review this draft:",
                 config=llm_config,
             )
+            generation_time = round(time.time() - t0, 1)
             parsed = raw  # Already parsed dict from pipeline
 
             body = parsed.get("body", "")
@@ -444,7 +447,7 @@ def generate_draft(
 
             if validation.is_valid:
                 draft_id = _make_draft_id(item)
-                return DraftPost(
+                draft_post = DraftPost(
                     draft_id=draft_id,
                     body=body,
                     hashtags=hashtags,
@@ -455,6 +458,14 @@ def generate_draft(
                     feature_event=feature_event,
                     progression_summary=progression_summary,
                 )
+                if isinstance(pipeline_meta, dict):
+                    draft_post._model_metadata = {
+                        "draft_model": pipeline_meta.get("draft_model", ""),
+                        "critic_model": pipeline_meta.get("critic_model", ""),
+                        "draft_attempts": attempt + 1,
+                        "generation_time_s": generation_time,
+                    }
+                return draft_post
 
             if attempt == 0:
                 logger.warning("Draft validation failed (attempt 1), retrying: %s", validation.errors)
@@ -533,13 +544,15 @@ def generate_topic_draft(
 
     for attempt in range(2):
         try:
-            raw, critique_raw = run_pipeline_sync(
+            t0 = time.time()
+            raw, critique_raw, pipeline_meta = run_pipeline_sync(
                 system_prompt,
                 user_prompt,
                 critic_prompt=critic_system,
                 critic_input="Review this draft:",
                 config=llm_config,
             )
+            generation_time = round(time.time() - t0, 1)
             parsed = raw  # Already parsed dict from pipeline
 
             body = parsed.get("body", "")
@@ -562,7 +575,7 @@ def generate_topic_draft(
 
             if validation.is_valid:
                 draft_id = f"topic-{topic.get('scheduled_for', 'undated')}-{topic['id']}"
-                return TopicDraft(
+                topic_draft = TopicDraft(
                     draft_id=draft_id,
                     body=body,
                     hashtags=hashtags,
@@ -572,6 +585,14 @@ def generate_topic_draft(
                     pillar=topic.get("pillar", ""),
                     scheduled_for=str(topic.get("scheduled_for", "")),
                 )
+                if isinstance(pipeline_meta, dict):
+                    topic_draft._model_metadata = {
+                        "draft_model": pipeline_meta.get("draft_model", ""),
+                        "critic_model": pipeline_meta.get("critic_model", ""),
+                        "draft_attempts": attempt + 1,
+                        "generation_time_s": generation_time,
+                    }
+                return topic_draft
 
             if attempt == 0:
                 logger.warning("Topic draft validation failed (attempt 1), retrying: %s", validation.errors)
@@ -616,6 +637,12 @@ def save_topic_draft_to_file(draft: TopicDraft, output_dir: str | Path = "drafts
         "generated_at": datetime.now(UTC).isoformat(),
         "publish": False,
     }
+
+    model_meta = getattr(draft, "_model_metadata", None)
+    if model_meta:
+        for key in ("draft_model", "critic_model", "draft_attempts", "generation_time_s"):
+            if model_meta.get(key) is not None:
+                metadata[key] = model_meta[key]
 
     post = frontmatter.Post(draft.body, **metadata)
     file_path.write_text(frontmatter.dumps(post), encoding="utf-8")
@@ -693,13 +720,15 @@ Include source URLs so readers can verify and dig deeper.
 
     for attempt in range(2):
         try:
-            raw, critique_raw = run_pipeline_sync(
+            t0 = time.time()
+            raw, critique_raw, pipeline_meta = run_pipeline_sync(
                 system_prompt,
                 user_prompt,
                 critic_prompt=critic_system,
                 critic_input="Review this draft:",
                 config=llm_config,
             )
+            generation_time = round(time.time() - t0, 1)
             parsed = raw  # Already parsed dict from pipeline
             body = parsed.get("body", "")
             hashtags = parsed.get("hashtags", [])
@@ -725,12 +754,20 @@ Include source URLs so readers can verify and dig deeper.
                     {"title": item.title, "url": item.link}
                     for item, _ in items
                 ]
-                return RoundupDraft(
+                roundup = RoundupDraft(
                     draft_id=draft_id,
                     body=body,
                     hashtags=hashtags,
                     source_items=source_items,
                 )
+                if isinstance(pipeline_meta, dict):
+                    roundup._model_metadata = {
+                        "draft_model": pipeline_meta.get("draft_model", ""),
+                        "critic_model": pipeline_meta.get("critic_model", ""),
+                        "draft_attempts": attempt + 1,
+                        "generation_time_s": generation_time,
+                    }
+                return roundup
 
             if attempt == 0:
                 logger.warning(
@@ -777,6 +814,12 @@ def save_roundup_to_file(
         "publish": False,
     }
 
+    model_meta = getattr(draft, "_model_metadata", None)
+    if model_meta:
+        for key in ("draft_model", "critic_model", "draft_attempts", "generation_time_s"):
+            if model_meta.get(key) is not None:
+                metadata[key] = model_meta[key]
+
     post = frontmatter.Post(draft.body, **metadata)
     file_path = dir_path / f"{draft.draft_id}.md"
     file_path.write_text(frontmatter.dumps(post), encoding="utf-8")
@@ -811,9 +854,16 @@ def save_draft_to_file(draft: DraftPost, output_dir: str | Path = "drafts") -> P
     }
     if draft.feature_event:
         metadata["lifecycle_stage"] = draft.feature_event.stage
+        metadata["feature_slug"] = draft.feature_event.slug
         metadata["is_progression"] = draft.feature_event.is_progression
     if draft.progression_summary:
         metadata["progression_summary"] = draft.progression_summary
+
+    model_meta = getattr(draft, "_model_metadata", None)
+    if model_meta:
+        for key in ("draft_model", "critic_model", "draft_attempts", "generation_time_s"):
+            if model_meta.get(key) is not None:
+                metadata[key] = model_meta[key]
 
     post = frontmatter.Post(draft.body, **metadata)
     file_path.write_text(frontmatter.dumps(post), encoding="utf-8")

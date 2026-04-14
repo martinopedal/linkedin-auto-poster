@@ -30,6 +30,15 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Restore state from state branch
+        run: |
+          if git fetch origin state 2>/dev/null; then
+            git checkout origin/state -- data/ 2>/dev/null || true
+            echo "State restored from state branch"
+          else
+            echo "No state branch yet, using main's state files"
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
@@ -81,32 +90,30 @@ jobs:
             echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Commit state changes to main
+      - name: Push state to state branch
         if: steps.check.outputs.has_changes == 'true'
         continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add data/ content-topics.yaml
+          git add data/
           git diff --cached --quiet && exit 0
 
-          git commit -m "Update state files $(date -u +%Y-%m-%d)"
+          git commit -m "state: update $(date -u +%Y-%m-%d)"
 
-          # Retry push up to 3 times with rebase
+          # Push to unprotected state branch (bypasses main's ruleset)
           for i in 1 2 3; do
-            if git push origin main 2>/dev/null; then
-              echo "State pushed successfully on attempt $i"
-              exit 0
+            if git push origin HEAD:refs/heads/state --force 2>/dev/null; then
+              echo "State pushed to state branch on attempt $i"
+              break
             fi
-            echo "Push failed (attempt $i), pulling and retrying..."
-            git pull --rebase origin main || {
-              echo "::warning::Rebase conflict on state files. Skipping state push."
-              git rebase --abort 2>/dev/null || true
-              exit 0
-            }
+            echo "State push failed (attempt $i), retrying..."
+            sleep 2
           done
-          echo "::warning::State push failed after 3 attempts"
+
+          # Reset local main so draft PRs don't include state changes
+          git reset --hard HEAD~1
 
       - name: Create one PR per draft
         if: steps.check.outputs.has_changes == 'true'

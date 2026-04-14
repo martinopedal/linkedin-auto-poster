@@ -1,26 +1,4 @@
-"""GitHub Copilot SDK wrapper for draft generation.
-
-This module handles all AI interactions through the Copilot SDK.
-Two modes of operation:
-
-1. Raw text generation (generate_with_copilot / generate_with_fallback):
-   - Uses deny_all permissions to prevent tool/skill invocation
-   - system_message mode="replace" overrides the SDK's default system prompt
-     so only our voice profile and rules apply
-   - Used for both drafting and critique steps
-
-2. JSON generation (generate_json_with_fallback):
-   - Same as raw, but parses the response as JSON
-   - Falls back to the next model if JSON parsing fails
-
-Fallback chain:
-   Draft: Claude Opus → Claude Sonnet → GPT-4.1
-   Critic: GPT-5.4 → GPT-4.1
-   Each model is retried up to 3 times with exponential backoff.
-
-The run_draft_pipeline function orchestrates the full draft+critique flow
-using a single CopilotClient with separate sessions.
-"""
+"""GitHub Copilot SDK wrapper for draft generation."""
 
 from __future__ import annotations
 
@@ -50,9 +28,10 @@ def _create_client() -> CopilotClient:
     4. Stored OAuth credentials (from 'copilot' CLI login)
     5. gh CLI auth
 
-    Token must have 'copilot' scope. The automatic Actions GITHUB_TOKEN
-    (ghs_ prefix) does NOT support Copilot API - use a PAT instead.
-    See README for setup instructions.
+    Supported token types: gho_, ghu_, github_pat_
+    NOT supported: ghs_ (GitHub Actions installation tokens)
+
+    For CI, set a PAT with copilot scope as COPILOT_GITHUB_TOKEN secret.
     """
     return CopilotClient()
 
@@ -169,8 +148,11 @@ async def generate_with_fallback(
     models: list[str],
     client: CopilotClient,
     temperature: float = 0.7,
-) -> str:
-    """Try models in order with exponential backoff."""
+) -> tuple[str, str]:
+    """Try models in order with exponential backoff.
+
+    Returns (generated_text, model_name_used).
+    """
     last_error = None
     for model_idx, model in enumerate(models):
         for retry in range(3):
@@ -179,7 +161,7 @@ async def generate_with_fallback(
                     system_prompt, user_prompt, model, client, temperature
                 )
                 logger.info("Generated with %s (attempt %d)", model, retry + 1)
-                return result
+                return result, model
             except Exception as e:
                 last_error = e
                 if _is_retryable_error(e):
@@ -203,8 +185,11 @@ async def generate_json_with_fallback(
     models: list[str],
     client: CopilotClient,
     temperature: float = 0.7,
-) -> dict:
-    """Generate and parse JSON, falling back to next model on parse failure."""
+) -> tuple[dict, str]:
+    """Generate and parse JSON, falling back to next model on parse failure.
+
+    Returns (parsed_dict, model_name_used).
+    """
     from src.drafts.drafter import _parse_llm_json
 
     last_error = None
@@ -216,7 +201,7 @@ async def generate_json_with_fallback(
                 )
                 parsed = _parse_llm_json(raw)
                 logger.info("Generated valid JSON with %s", model)
-                return parsed
+                return parsed, model
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = e
                 wait = 3 * (3 ** retry)
@@ -247,10 +232,10 @@ async def run_draft_pipeline(
     critic_prompt: str | None,
     critic_input: str | None,
     config: dict,
-) -> tuple[dict, str | None]:
+) -> tuple[dict, str | None, dict]:
     """Run full draft + critique pipeline.
 
-    Returns (parsed_draft_dict, critique_rewrite_or_none).
+    Returns (parsed_draft_dict, critique_rewrite_or_none, metadata).
     Uses one CopilotClient with separate sessions.
     """
     draft_model = config.get("draft_model", DEFAULT_DRAFT_MODEL)
@@ -258,9 +243,28 @@ async def run_draft_pipeline(
     draft_models = [draft_model] + FALLBACK_MODELS
     critic_models = [critic_model, "gpt-4.1"]
 
+    draft_model_used = None
+    critic_model_used = None
+
     async with _create_client() as client:
+        # Verify auth before spending time on model calls
+        try:
+            auth = await client.get_auth_status()
+            if not auth.isAuthenticated:
+                raise RuntimeError(
+                    f"Copilot auth failed (type={auth.authType}, "
+                    f"msg={auth.statusMessage}). "
+                    "In CI, add a COPILOT_GITHUB_TOKEN repo secret "
+                    "(classic PAT with 'copilot' scope)."
+                )
+            logger.info("Copilot authenticated as %s (type=%s)", auth.login, auth.authType)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.warning("Could not verify auth status: %s", e)
+
         # Step 1: Draft (JSON parsed via model fallback chain)
-        draft_parsed = await generate_json_with_fallback(
+        draft_parsed, draft_model_used = await generate_json_with_fallback(
             system_prompt, user_prompt, draft_models, client
         )
 
@@ -270,13 +274,17 @@ async def run_draft_pipeline(
             try:
                 draft_body = draft_parsed.get("body", "")
                 full_critic_input = f"{critic_input}\n\n{draft_body}"
-                critique_text = await generate_with_fallback(
+                critique_text, critic_model_used = await generate_with_fallback(
                     critic_prompt, full_critic_input, critic_models, client
                 )
             except Exception:
                 logger.warning("Critique failed, using draft as-is", exc_info=True)
 
-        return draft_parsed, critique_text
+        metadata = {
+            "draft_model": draft_model_used,
+            "critic_model": critic_model_used,
+        }
+        return draft_parsed, critique_text, metadata
 
 
 def run_pipeline_sync(
@@ -285,7 +293,7 @@ def run_pipeline_sync(
     critic_prompt: str | None = None,
     critic_input: str | None = None,
     config: dict | None = None,
-) -> tuple[dict, str | None]:
+) -> tuple[dict, str | None, dict]:
     """Sync wrapper for the async pipeline. Call from click commands."""
     return asyncio.run(
         run_draft_pipeline(

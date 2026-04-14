@@ -100,6 +100,7 @@ class TestGenerateTopicDraft:
                 "pattern_used": "lessons",
             },
             None,
+            {"draft_model": "test-model", "critic_model": None},
         )
 
         topic = {
@@ -127,6 +128,7 @@ class TestGenerateTopicDraft:
                 "pattern_used": "lessons",
             },
             None,
+            {"draft_model": "test-model", "critic_model": None},
         )
 
         topic = {
