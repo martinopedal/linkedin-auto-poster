@@ -185,6 +185,15 @@ Go to your repo on GitHub → **Settings** → **Secrets and variables** → **A
 | `LINKEDIN_CLIENT_ID` | Your LinkedIn app client ID | LinkedIn Developer Portal → Auth tab |
 | `LINKEDIN_CLIENT_SECRET` | Your LinkedIn app client secret | LinkedIn Developer Portal → Auth tab |
 | `LINKEDIN_ACCESS_TOKEN` | Your OAuth access token | Output of `python scripts/linkedin_setup.py` |
+| `COPILOT_GITHUB_TOKEN` | A GitHub PAT with `copilot` scope | [github.com/settings/tokens](https://github.com/settings/tokens) |
+
+> **Important: Copilot SDK authentication.** The automatic `GITHUB_TOKEN` provided by Actions does NOT have Copilot API access. You must create a Personal Access Token (PAT) with `copilot` scope and store it as `COPILOT_GITHUB_TOKEN`. The SDK reads this env var automatically (highest priority). See [Copilot SDK auth docs](https://docs.github.com/en/copilot/how-tos/copilot-sdk/authenticate-copilot-sdk/authenticate-copilot-sdk) for details.
+>
+> **How to create the token:**
+> 1. Go to [github.com/settings/tokens](https://github.com/settings/tokens?type=beta) (fine-grained) or [classic tokens](https://github.com/settings/tokens/new)
+> 2. For fine-grained: select **Copilot** permission
+> 3. For classic: check the **copilot** scope
+> 4. Copy the token and add it as `COPILOT_GITHUB_TOKEN` in repo Settings → Secrets
 
 #### b. (Optional) Add blocked names
 
@@ -406,6 +415,7 @@ linkedin-auto-poster/
 | `LINKEDIN_ACCESS_TOKEN` | Yes | OAuth access token (from `scripts/linkedin_setup.py`) |
 | `LINKEDIN_REFRESH_TOKEN` | No | Refresh token (only for certain LinkedIn app tiers) |
 | `GITHUB_TOKEN` | Yes | GitHub API access (releases, repo monitoring). Alias: `GH_TOKEN` |
+| `COPILOT_GITHUB_TOKEN` | Yes (for Actions) | Fine-grained PAT with Copilot permission. Required for AI draft generation in GitHub Actions. The automatic `GITHUB_TOKEN` does not support Copilot API. |
 | `GITHUB_USER` | No | GitHub username for repo monitoring. Fallback: `GITHUB_ACTOR` |
 | `AUTHOR_NAME` | No | Override author name (default: from `config.yaml`) |
 
@@ -489,7 +499,7 @@ The `token-reminder.yml` workflow creates a GitHub issue when your token is with
 | Repo monitoring skipped | `GITHUB_USER` not set | Set `GITHUB_USER` in `.env` for local runs |
 | Publish fails with 403 | Expired LinkedIn token or missing "Share on LinkedIn" product | Renew via `linkedin_setup.py`; check LinkedIn app Products tab |
 | State files missing | First run | Run `python scripts/init.py` |
-| "All models failed" error | Copilot SDK authentication issue | Ensure `GITHUB_TOKEN` is set and your Copilot subscription is active |
+| "All models failed" error | Copilot SDK authentication issue | Create a PAT with `copilot` scope and add as `COPILOT_GITHUB_TOKEN` secret. The automatic Actions GITHUB_TOKEN does not support Copilot API. |
 | Draft validation fails | Post too short, banned phrases, PII detected | Check the validation errors in the log output  - the validator lists specific issues |
 | PR not triggering publish | Missing `approve-post` label | Add the label before merging  - the workflow checks for it |
 | `config.yaml` not found | First run without init | Run `python scripts/init.py` to create from template |

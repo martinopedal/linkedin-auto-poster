@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 
 from copilot import CopilotClient
 
@@ -42,10 +41,19 @@ def _is_retryable_error(e: Exception) -> bool:
 
 
 def _create_client() -> CopilotClient:
-    """Create a CopilotClient with explicit auth for CI compatibility."""
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token:
-        return CopilotClient(github_token=token)
+    """Create a CopilotClient with auth from environment.
+
+    Auth priority (per SDK docs):
+    1. COPILOT_GITHUB_TOKEN env var (recommended)
+    2. GH_TOKEN env var
+    3. GITHUB_TOKEN env var
+    4. Stored OAuth credentials (from 'copilot' CLI login)
+    5. gh CLI auth
+
+    Token must have 'copilot' scope. The automatic Actions GITHUB_TOKEN
+    (ghs_ prefix) does NOT support Copilot API - use a PAT instead.
+    See README for setup instructions.
+    """
     return CopilotClient()
 
 
