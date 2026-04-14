@@ -59,9 +59,11 @@ jobs:
           mkdir -p data drafts
 
       - name: Set up blocked names
+        env:
+          BLOCKED_NAMES: ${{ secrets.BLOCKED_NAMES }}
         run: |
-          if [ -n "${{ secrets.BLOCKED_NAMES }}" ]; then
-            echo "${{ secrets.BLOCKED_NAMES }}" > data/blocked-names.txt
+          if [ -n "$BLOCKED_NAMES" ]; then
+            printf '%s\n' "$BLOCKED_NAMES" > data/blocked-names.txt
           fi
 
       - name: Fetch and filter news

@@ -52,10 +52,12 @@ jobs:
         id: verify
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
-          PR_NUM=${{ github.event.pull_request.number }}
           # Use GitHub API for reliable file list (not git diff which uses merged code)
-          CHANGED=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM/files --paginate --jq '.[].filename')
+          CHANGED=$(gh api repos/$REPOSITORY/pulls/$PR_NUM/files --paginate --jq '.[].filename')
           NON_DRAFT=$(echo "$CHANGED" | grep -vE '^drafts/.+\.md$' | grep -v '^$' || true)
           if [ -n "$NON_DRAFT" ]; then
             echo "::error::BLOCKED: Non-draft files changed in PR #$PR_NUM: $NON_DRAFT"
@@ -64,7 +66,7 @@ jobs:
               --title "Security: publish blocked for PR #$PR_NUM" \
               --body "PR #$PR_NUM was merged with approve-post label but contained non-draft file changes. Publishing was blocked as a security precaution.\n\nChanged files:\n$NON_DRAFT" \
               --label "bug" \
-              --assignee "${{ github.repository_owner }}" || true
+              --assignee "$REPO_OWNER" || true
           else
             echo "Only draft files changed. Safe to publish."
             echo "safe=true" >> $GITHUB_OUTPUT
@@ -109,11 +111,16 @@ jobs:
         if: steps.publish.outputs.published_count == '0' || failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_NUM="${{ github.event.pull_request.number }}"
           REASON="unknown"
-          if [ "${{ steps.publish.outcome }}" = "failure" ]; then
+          if [ "$PUBLISH_OUTCOME" = "failure" ]; then
             REASON="Publish step failed (check logs)"
           else
             REASON="0 posts published (token may be expired or draft not found)"
@@ -121,13 +128,13 @@ jobs:
 
           gh issue create \
             --title "Publish failed: $PR_TITLE" \
-            --body "PR #$PR_NUM was merged with approve-post label but **no post was published to LinkedIn**.
+            --body "PR #${PR_NUM} was merged with approve-post label but **no post was published to LinkedIn**.
 
-          **Reason:** $REASON
+**Reason:** $REASON
 
-          **Action required:**
-          1. Check the [workflow run logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          2. If token expired: re-run \`scripts/linkedin_setup.py\` and update \`LINKEDIN_ACCESS_TOKEN\` secret
-          3. To retry: run \`python main.py publish\` locally with valid credentials" \
+**Action required:**
+1. Check the [workflow run logs](${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID})
+2. If token expired: re-run \`scripts/linkedin_setup.py\` and update \`LINKEDIN_ACCESS_TOKEN\` secret
+3. To retry: run \`python main.py publish\` locally with valid credentials" \
             --label "bug" \
-            --assignee "${{ github.repository_owner }}"
+            --assignee "$REPO_OWNER"
