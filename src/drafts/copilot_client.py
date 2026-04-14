@@ -32,7 +32,7 @@ from copilot import CopilotClient
 
 logger = logging.getLogger(__name__)
 
-_RETRYABLE_PATTERNS = ["timeout", "429", "500", "502", "503", "504", "connection", "eof"]
+_RETRYABLE_PATTERNS = ["timeout", "429", "500", "502", "503", "504", "connection", "eof", "empty response"]
 
 
 def _is_retryable_error(e: Exception) -> bool:
@@ -78,6 +78,7 @@ async def _send_and_collect(session, message: str) -> str:
     # Return the last turn's message (the final answer)
     if messages:
         return messages[-1]
+    logger.warning("SDK session produced no assistant.message events")
     return ""
 
 
@@ -91,13 +92,16 @@ async def generate_with_copilot(
     """Generate text using a Copilot SDK session. Returns raw response text.
 
     Uses deny_all permissions to prevent the agent from invoking
-    tools/skills — we want raw text generation only.
+    tools/skills - we want raw text generation only.
     """
     try:
-        return await asyncio.wait_for(
+        result = await asyncio.wait_for(
             _generate_session(system_prompt, user_prompt, model, client),
             timeout=120,
         )
+        if not result.strip():
+            raise RuntimeError(f"Empty response from {model}")
+        return result
     except TimeoutError:
         logger.warning("SDK session timed out for %s", model)
         raise RuntimeError(f"SDK session timed out for {model}")

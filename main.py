@@ -1,12 +1,12 @@
 """CLI entry point for linkedin-auto-poster.
 
 Commands:
-  fetch       — Fetch news from RSS feeds, score, deduplicate, save candidates
-  draft       — Generate AI post drafts from fetched candidates (standalone + roundup)
-  draft-topic — Generate scheduled opinion/thought-leadership posts from content-topics.yaml
-  draft-repo  — Generate showcase posts for newly created GitHub repos
-  publish     — Publish approved drafts to LinkedIn (or --dry-run to preview)
-  preflight   — Validate LinkedIn API credentials and token health
+  fetch       - Fetch news from RSS feeds, score, deduplicate, save candidates
+  draft       - Generate AI post drafts from fetched candidates (standalone + roundup)
+  draft-topic - Generate scheduled opinion/thought-leadership posts from content-topics.yaml
+  draft-repo  - Generate showcase posts for newly created GitHub repos
+  publish     - Publish approved drafts to LinkedIn (or --dry-run to preview)
+  preflight   - Validate LinkedIn API credentials and token health
 """
 
 from __future__ import annotations
@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 @click.group()
 def main() -> None:
     """LinkedIn Auto-Poster: industry news to LinkedIn post drafts."""
+    config_path = Path("config.yaml")
+    if not config_path.exists():
+        click.echo("Error: config.yaml not found. Run 'python scripts/init.py' first.")
+        click.echo("See README.md Quick Start for setup instructions.")
+        raise SystemExit(1)
 
 
 @main.command()

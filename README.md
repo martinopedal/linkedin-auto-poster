@@ -492,6 +492,7 @@ The `token-reminder.yml` workflow creates a GitHub issue when your token is with
 | "All models failed" error | Copilot SDK authentication issue | Ensure `GITHUB_TOKEN` is set and your Copilot subscription is active |
 | Draft validation fails | Post too short, banned phrases, PII detected | Check the validation errors in the log output  - the validator lists specific issues |
 | PR not triggering publish | Missing `approve-post` label | Add the label before merging  - the workflow checks for it |
+| `config.yaml` not found | First run without init | Run `python scripts/init.py` to create from template |
 
 ## Security
 
@@ -500,7 +501,7 @@ The `token-reminder.yml` workflow creates a GitHub issue when your token is with
 - SSRF protection on research tools (private IP blocking)
 - SHA-pinned GitHub Actions where possible
 - Prompt injection protection with XML-style data delimiters
-- URL domain allowlist for linked content
+- URL domain warnings for unapproved content sources
 - File guard on publish: only `drafts/*.md` changes trigger posting
 
 ## Contributing
