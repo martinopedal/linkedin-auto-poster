@@ -16,7 +16,7 @@ Two modes of operation:
 Fallback chain:
    Draft: Claude Opus → Claude Sonnet → GPT-4.1
    Critic: GPT-5.4 → GPT-4.1
-   Each model is retried once on transient errors (timeout, 429, 5xx).
+   Each model is retried up to 3 times with exponential backoff.
 
 The run_draft_pipeline function orchestrates the full draft+critique flow
 using a single CopilotClient with separate sessions.
@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 
 from copilot import CopilotClient
 
@@ -38,6 +39,15 @@ _RETRYABLE_PATTERNS = ["timeout", "429", "500", "502", "503", "504", "connection
 def _is_retryable_error(e: Exception) -> bool:
     err_str = str(e).lower()
     return any(p in err_str for p in _RETRYABLE_PATTERNS)
+
+
+def _create_client() -> CopilotClient:
+    """Create a CopilotClient with explicit auth for CI compatibility."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return CopilotClient(github_token=token)
+    return CopilotClient()
+
 
 # Models configuration
 DEFAULT_DRAFT_MODEL = "claude-opus-4.6"
@@ -55,19 +65,31 @@ async def _send_and_collect(session, message: str) -> str:
     messages = []
     current_turn_messages = []
     done = asyncio.Event()
+    event_types_seen = []
+    session_error = None
 
     def on_event(event):
-        nonlocal current_turn_messages
+        nonlocal current_turn_messages, session_error
         etype = event.type.value
+        event_types_seen.append(etype)
         if etype == "assistant.turn_start":
             current_turn_messages = []
         elif etype == "assistant.message":
             content = getattr(event.data, "content", "")
             if content:
                 current_turn_messages.append(content)
+        elif etype == "assistant.message_delta":
+            content = getattr(event.data, "content", "") or getattr(event.data, "delta", "")
+            if content:
+                current_turn_messages.append(content)
         elif etype == "assistant.turn_end":
             if current_turn_messages:
                 messages.append("".join(current_turn_messages))
+        elif etype == "session.error":
+            error_msg = getattr(event.data, "message", "") or getattr(event.data, "error", "") or str(event.data)
+            session_error = error_msg
+            logger.error("SDK session error: %s", error_msg)
+            done.set()
         elif etype == "session.idle":
             done.set()
 
@@ -75,10 +97,16 @@ async def _send_and_collect(session, message: str) -> str:
     await session.send(message)
     await done.wait()
 
+    if session_error:
+        raise RuntimeError(f"SDK session error: {session_error}")
+
     # Return the last turn's message (the final answer)
     if messages:
         return messages[-1]
-    logger.warning("SDK session produced no assistant.message events")
+    logger.warning(
+        "SDK session produced no content. Events: %s",
+        ", ".join(event_types_seen) or "none",
+    )
     return ""
 
 
@@ -110,8 +138,13 @@ async def generate_with_copilot(
 async def _generate_session(
     system_prompt: str, user_prompt: str, model: str, client: CopilotClient
 ) -> str:
-    """Internal: create session, send, collect response."""
-    def deny_all(request):
+    """Internal: create session, send, collect response.
+
+    Uses mode:"replace" to override system prompt and disables
+    all tool/skill permissions for raw text generation.
+    """
+    def deny_all(*args, **kwargs):
+        """Deny all permission requests - accepts any signature."""
         return False
 
     async with await client.create_session(
@@ -129,10 +162,10 @@ async def generate_with_fallback(
     client: CopilotClient,
     temperature: float = 0.7,
 ) -> str:
-    """Try models in order, fall back on failure."""
+    """Try models in order with exponential backoff."""
     last_error = None
-    for model in models:
-        for retry in range(2):
+    for model_idx, model in enumerate(models):
+        for retry in range(3):
             try:
                 result = await generate_with_copilot(
                     system_prompt, user_prompt, model, client, temperature
@@ -141,12 +174,17 @@ async def generate_with_fallback(
                 return result
             except Exception as e:
                 last_error = e
-                if retry == 0 and _is_retryable_error(e):
-                    logger.warning("%s retry: %s", model, str(e)[:100])
-                    await asyncio.sleep(1)
+                if _is_retryable_error(e):
+                    wait = 3 * (3 ** retry)
+                    logger.warning("%s attempt %d failed, waiting %ds: %s",
+                                   model, retry + 1, wait, str(e)[:100])
+                    await asyncio.sleep(wait)
                     continue
-                logger.warning("%s failed, next model: %s", model, str(e)[:100])
+                logger.warning("%s non-retryable failure: %s", model, str(e)[:100])
                 break
+        if model_idx < len(models) - 1:
+            logger.info("Switching to next model, waiting 5s...")
+            await asyncio.sleep(5)
 
     raise RuntimeError(f"All models failed. Last: {last_error}")
 
@@ -162,8 +200,8 @@ async def generate_json_with_fallback(
     from src.drafts.drafter import _parse_llm_json
 
     last_error = None
-    for model in models:
-        for retry in range(2):
+    for model_idx, model in enumerate(models):
+        for retry in range(3):
             try:
                 raw = await generate_with_copilot(
                     system_prompt, user_prompt, model, client, temperature
@@ -173,20 +211,24 @@ async def generate_json_with_fallback(
                 return parsed
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = e
-                if retry == 0:
-                    logger.warning("%s returned invalid JSON, retrying: %s", model, str(e)[:80])
-                    await asyncio.sleep(0.5)
-                    continue
-                logger.warning("%s JSON failed twice, next model: %s", model, str(e)[:80])
-                break
+                wait = 3 * (3 ** retry)
+                logger.warning("%s returned invalid JSON (attempt %d), waiting %ds: %s",
+                               model, retry + 1, wait, str(e)[:80])
+                await asyncio.sleep(wait)
+                continue
             except Exception as e:
                 last_error = e
-                if retry == 0 and _is_retryable_error(e):
-                    logger.warning("%s transient error, retrying: %s", model, str(e)[:80])
-                    await asyncio.sleep(1)
+                if _is_retryable_error(e):
+                    wait = 3 * (3 ** retry)
+                    logger.warning("%s attempt %d failed, waiting %ds: %s",
+                                   model, retry + 1, wait, str(e)[:80])
+                    await asyncio.sleep(wait)
                     continue
-                logger.warning("%s failed, next model: %s", model, str(e)[:80])
+                logger.warning("%s non-retryable failure: %s", model, str(e)[:80])
                 break
+        if model_idx < len(models) - 1:
+            logger.info("Switching to next model, waiting 5s...")
+            await asyncio.sleep(5)
 
     raise RuntimeError(f"All models failed. Last: {last_error}")
 
@@ -208,7 +250,7 @@ async def run_draft_pipeline(
     draft_models = [draft_model] + FALLBACK_MODELS
     critic_models = [critic_model, "gpt-4.1"]
 
-    async with CopilotClient() as client:
+    async with _create_client() as client:
         # Step 1: Draft (JSON parsed via model fallback chain)
         draft_parsed = await generate_json_with_fallback(
             system_prompt, user_prompt, draft_models, client

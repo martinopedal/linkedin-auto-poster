@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from copilot import CopilotClient, define_tool
+from copilot import define_tool
 from pydantic import BaseModel, Field
 
 from src.feeds.research_tools import (
@@ -145,12 +145,14 @@ Source URL: {source_url}
 
 Fetch the source article first, then verify any specific Azure feature claims."""
 
-    async with CopilotClient() as client:
+    from src.drafts.copilot_client import _create_client
+
+    async with _create_client() as client:
         async with await client.create_session(
             model=model,
             system_message={"mode": "replace", "content": system_prompt},
             tools=[tool_fetch_article, tool_search_learn, tool_check_terraform],
-            on_permission_request=lambda _: True,
+            on_permission_request=lambda *args, **kwargs: True,
         ) as session:
             messages: list[str] = []
             current_turn: list[str] = []
