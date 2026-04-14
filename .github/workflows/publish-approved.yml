@@ -126,15 +126,9 @@ jobs:
             REASON="0 posts published (token may be expired or draft not found)"
           fi
 
+          BODY="PR #${PR_NUM} was merged with approve-post label but **no post was published to LinkedIn**."$'\n\n'"**Reason:** $REASON"$'\n\n'"**Action required:**"$'\n'"1. Check the [workflow run logs](${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID})"$'\n'"2. If token expired: re-run \`scripts/linkedin_setup.py\` and update \`LINKEDIN_ACCESS_TOKEN\` secret"$'\n'"3. To retry: run \`python main.py publish\` locally with valid credentials"
           gh issue create \
             --title "Publish failed: $PR_TITLE" \
-            --body "PR #${PR_NUM} was merged with approve-post label but **no post was published to LinkedIn**.
-
-**Reason:** $REASON
-
-**Action required:**
-1. Check the [workflow run logs](${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID})
-2. If token expired: re-run \`scripts/linkedin_setup.py\` and update \`LINKEDIN_ACCESS_TOKEN\` secret
-3. To retry: run \`python main.py publish\` locally with valid credentials" \
+            --body "$BODY" \
             --label "bug" \
             --assignee "$REPO_OWNER"
