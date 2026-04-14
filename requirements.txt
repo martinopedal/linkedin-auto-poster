@@ -1,0 +1,8 @@
+feedparser>=6.0,<7
+github-copilot-sdk>=0.2.0
+pydantic>=2.12.5,<3
+pyyaml>=6.0,<7
+requests>=2.31,<3
+click>=8.3.2,<9
+python-frontmatter>=1.1,<2
+python-dotenv>=1.0,<2

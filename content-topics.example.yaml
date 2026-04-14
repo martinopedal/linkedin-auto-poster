@@ -1,0 +1,37 @@
+# Content Calendar — Scheduled Topic Posts
+# These generate opinion/thought-leadership posts on specific dates.
+# Copy to content-topics.yaml and customize.
+#
+# Fields:
+#   slug: unique identifier
+#   title: post topic
+#   scheduled_for: date to generate draft (YYYY-MM-DD)
+#   status: planned | drafted | posted
+#   prompt_hint: guidance for the AI on angle/focus
+
+topics:
+  - id: iac-best-practices
+    title: "Infrastructure as Code best practices I've learned"
+    scheduled_for: "2026-05-01"
+    status: planned
+    pattern: lessons
+    pillar: cloud-architecture
+    notes: "Share practical IaC lessons, mistakes to avoid"
+
+  - id: cloud-career-tips
+    title: "What I wish I knew starting in cloud engineering"
+    scheduled_for: "2026-05-08"
+    status: planned
+    pattern: reflection
+    pillar: career
+    notes: "Career advice for cloud professionals, be genuine"
+
+  - id: devops-automation
+    title: "Automating the boring stuff in DevOps"
+    scheduled_for: "2026-05-15"
+    status: planned
+    pattern: observation
+    pillar: iac-devops
+    notes: "Real automation wins, tools that saved time"
+
+  # Add your own topics here...

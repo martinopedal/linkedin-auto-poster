@@ -1,0 +1,70 @@
+# LinkedIn Auto-Poster Configuration
+# Copy this file to config.yaml and customize for your use case.
+
+# --- Author ---
+# Your name as it appears on LinkedIn. Used in post generation prompts.
+author_name: "Your Name"
+
+# --- LLM Models ---
+# Primary model for drafting posts (best writing quality)
+draft_model: "claude-opus-4.6"
+# Critic model for reviewing drafts (fast analysis)
+critic_model: "gpt-5.4"
+# Maximum tokens for LLM responses
+max_tokens: 2000
+
+# --- News Sources ---
+# RSS feeds to monitor. Add any RSS/Atom feeds relevant to your industry.
+# Example: Azure/cloud feeds (customize for your niche)
+feeds:
+  - name: "Azure Updates"
+    url: "https://azurecomcdn.azureedge.net/en-us/updates/feed/"
+  - name: "Azure Blog"
+    url: "https://azure.microsoft.com/en-us/blog/feed/"
+  - name: "Kubernetes Blog"
+    url: "https://kubernetes.io/feed.xml"
+  # Add more feeds here...
+
+# --- Filtering ---
+filter:
+  include_keywords:
+    - "Kubernetes"
+    - "AKS"
+    - "Terraform"
+    - "Landing Zone"
+    - "Bicep"
+    - "AI Foundry"
+    - "Copilot"
+    - "Defender"
+    - "infrastructure"
+  exclude_keywords:
+    - "Entra"
+    - "Active Directory"
+    - "Microsoft 365"
+    - "Teams"
+    - "Intune"
+  min_significance_score: 3
+  max_posts_per_run: 5
+  standalone_threshold: 12
+
+# --- GitHub Releases (optional) ---
+# Monitor specific repos for new releases
+github_releases:
+  - repo: "hashicorp/terraform-provider-azurerm"
+    name: "AzureRM Terraform Provider"
+    min_release_type: "minor"
+  # Add more repos here...
+
+# --- LinkedIn ---
+linkedin:
+  visibility: "PUBLIC"
+  max_post_length: 1500
+
+# --- Publishing ---
+publish:
+  max_age_days: 7
+  dry_run: false
+
+# --- Content Calendar (optional) ---
+# Path to content topics file for scheduled opinion/thought-leadership posts
+topics_file: "content-topics.yaml"

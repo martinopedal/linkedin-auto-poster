@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "linkedin-auto-poster"
+version = "0.1.0"
+description = "Automatically generate and publish LinkedIn posts from industry news, powered by AI."
+requires-python = ">=3.12"
+license = {text = "MIT"}
+
+dependencies = [
+    "feedparser>=6.0,<7",
+    "github-copilot-sdk>=0.2.0",
+    "pydantic>=2.12.5,<3",
+    "pyyaml>=6.0,<7",
+    "requests>=2.31,<3",
+    "click>=8.3.2,<9",
+    "python-frontmatter>=1.1,<2",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=7.1.0",
+    "responses>=0.25",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+linkedin-auto-poster = "main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]

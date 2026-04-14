@@ -1,0 +1,122 @@
+name: Publish Approved
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: linkedin-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.merged == true
+      && contains(github.event.pull_request.labels.*.name, 'approve-post')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify only draft files changed
+        id: verify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          # Use GitHub API for reliable file list (not git diff which uses merged code)
+          CHANGED=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM/files --paginate --jq '.[].filename')
+          NON_DRAFT=$(echo "$CHANGED" | grep -vE '^drafts/.+\.md$' | grep -v '^$' || true)
+          if [ -n "$NON_DRAFT" ]; then
+            echo "::error::BLOCKED: Non-draft files changed in PR #$PR_NUM: $NON_DRAFT"
+            echo "safe=false" >> $GITHUB_OUTPUT
+            gh issue create \
+              --title "Security: publish blocked for PR #$PR_NUM" \
+              --body "PR #$PR_NUM was merged with approve-post label but contained non-draft file changes. Publishing was blocked as a security precaution.\n\nChanged files:\n$NON_DRAFT" \
+              --label "bug" \
+              --assignee "${{ github.repository_owner }}" || true
+          else
+            echo "Only draft files changed. Safe to publish."
+            echo "safe=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish approved drafts
+        if: steps.verify.outputs.safe == 'true'
+        id: publish
+        env:
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+        run: |
+          OUTPUT=$(python main.py publish 2>&1)
+          echo "$OUTPUT"
+          # Extract publish count
+          PUBLISHED=$(echo "$OUTPUT" | grep -oP 'Published \K\d+')
+          echo "published_count=${PUBLISHED:-0}" >> $GITHUB_OUTPUT
+
+      - name: Commit updated state
+        if: steps.verify.outputs.safe == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && exit 0
+
+          git commit -m "Update published state"
+
+          for i in 1 2 3; do
+            if git push 2>/dev/null; then
+              echo "State pushed on attempt $i"
+              exit 0
+            fi
+            echo "Push failed (attempt $i), retrying..."
+            git pull --rebase origin main || {
+              echo "::warning::Rebase conflict. Skipping state push."
+              git rebase --abort 2>/dev/null || true
+              exit 0
+            }
+          done
+          echo "::warning::State push failed after 3 attempts"
+
+      - name: Alert on publish failure
+        if: steps.publish.outputs.published_count == '0' || failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_NUM="${{ github.event.pull_request.number }}"
+          REASON="unknown"
+          if [ "${{ steps.publish.outcome }}" = "failure" ]; then
+            REASON="Publish step failed (check logs)"
+          else
+            REASON="0 posts published (token may be expired or draft not found)"
+          fi
+
+          gh issue create \
+            --title "Publish failed: $PR_TITLE" \
+            --body "PR #$PR_NUM was merged with approve-post label but **no post was published to LinkedIn**.
+
+          **Reason:** $REASON
+
+          **Action required:**
+          1. Check the [workflow run logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          2. If token expired: re-run \`scripts/linkedin_setup.py\` and update \`LINKEDIN_ACCESS_TOKEN\` secret
+          3. To retry: run \`python main.py publish\` locally with valid credentials" \
+            --label "bug" \
+            --assignee "${{ github.repository_owner }}"

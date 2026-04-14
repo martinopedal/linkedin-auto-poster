@@ -1,0 +1,26 @@
+# Secrets and local config
+.env
+config.yaml
+content-topics.yaml
+
+# State files (generated at runtime)
+data/
+drafts/
+
+# Blocked names
+data/blocked-names.txt
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/

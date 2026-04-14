@@ -1,0 +1,161 @@
+name: Fetch and Draft
+
+on:
+  # Uncomment the schedule below to enable automated daily runs
+  # schedule:
+  #   - cron: '0 6 * * 1-5'  # Weekdays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: news-fetch-draft
+  cancel-in-progress: false
+
+jobs:
+  fetch-and-draft:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up blocked names
+        run: |
+          if [ -n "${{ secrets.BLOCKED_NAMES }}" ]; then
+            echo "${{ secrets.BLOCKED_NAMES }}" > data/blocked-names.txt
+          fi
+
+      - name: Fetch and filter news
+        run: python main.py fetch
+
+      - name: Generate drafts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python main.py draft
+
+      - name: Generate topic drafts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python main.py draft-topic
+
+      - name: Check for new repos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python main.py draft-repo
+
+      - name: Check for new drafts
+        id: check
+        run: |
+          # Check tracked changes AND untracked draft files
+          if [ -n "$(git status --porcelain)" ] || [ -n "$(find drafts -name '*.md' ! -name '.gitkeep' 2>/dev/null)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit state changes to main
+        if: steps.check.outputs.has_changes == 'true'
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/ content-topics.yaml
+          git diff --cached --quiet && exit 0
+
+          git commit -m "Update state files $(date -u +%Y-%m-%d)"
+
+          # Retry push up to 3 times with rebase
+          for i in 1 2 3; do
+            if git push origin main 2>/dev/null; then
+              echo "State pushed successfully on attempt $i"
+              exit 0
+            fi
+            echo "Push failed (attempt $i), pulling and retrying..."
+            git pull --rebase origin main || {
+              echo "::warning::Rebase conflict on state files. Skipping state push."
+              git rebase --abort 2>/dev/null || true
+              exit 0
+            }
+          done
+          echo "::warning::State push failed after 3 attempts"
+
+      - name: Create one PR per draft
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Null-safe iteration over draft files
+          find drafts -name '*.md' ! -name '.gitkeep' -print0 | sort -z | while IFS= read -r -d '' DRAFT; do
+            [ -f "$DRAFT" ] || continue
+
+            # Sanitize branch name: strip prefix/suffix, replace non-alnum with dashes, truncate
+            SLUG=$(echo "$DRAFT" | sed 's|drafts/||;s|\.md$||;s|[^a-zA-Z0-9/_-]|-|g' | head -c 80)
+            BRANCH="linkedin-draft/${SLUG}"
+
+            # Skip if PR already exists for this draft
+            EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')
+            if [ "$EXISTING" != "0" ] 2>/dev/null; then
+              echo "PR already exists for $SLUG, skipping"
+              continue
+            fi
+
+            # Create branch from main with only this draft
+            git checkout main
+            git switch -C "$BRANCH"
+            git add "$DRAFT"
+            git commit -m "LinkedIn draft: $SLUG" || continue
+            git push origin "$BRANCH" --force
+
+            # Generate preview and title via Python script
+            PREVIEW_FILE="pr_body_${SLUG//\//_}.md"
+            python scripts/preview_drafts.py single "$DRAFT" "$PREVIEW_FILE"
+            PR_TITLE=$(python scripts/preview_drafts.py title "$DRAFT" | head -1 | cut -c1-256)
+
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "$PR_TITLE" \
+              --body-file "$PREVIEW_FILE" \
+              --label "linkedin-draft" || echo "PR creation failed for $SLUG"
+
+            rm -f "$PREVIEW_FILE"
+            git checkout main
+          done
+
+      - name: Close stale draft PRs (older than 7 days)
+        run: |
+          CUTOFF=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          STALE=$(gh pr list \
+            --label "linkedin-draft" \
+            --state open \
+            --json number,updatedAt,labels,headRefName \
+            --jq ".[] | select(.updatedAt < \"$CUTOFF\") | select(([.labels[].name] | index(\"approve-post\")) == null) | \"\(.number) \(.headRefName)\"")
+
+          if [ -z "$STALE" ]; then
+            echo "No stale PRs to close"
+            exit 0
+          fi
+
+          echo "$STALE" | while read -r PR_NUM BRANCH_NAME; do
+            echo "Closing stale PR #$PR_NUM (branch: $BRANCH_NAME)"
+            gh pr close "$PR_NUM" --delete-branch --comment "Auto-closed: draft not approved within 7 days." || true
+          done

@@ -1,0 +1,91 @@
+name: LinkedIn Token Expiry Reminder
+
+on:
+  schedule:
+    # Run on the 1st and 15th of every month at 08:00 UTC
+    - cron: '0 8 1,15 * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-token-age:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Check token age and send reminder
+        run: |
+          TOKEN_FILE="data/token_refreshed_at.txt"
+
+          if [ ! -f "$TOKEN_FILE" ]; then
+            echo "No token timestamp file found. Creating one with today's date."
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "$TOKEN_FILE"
+            LAST_REFRESH=$(cat "$TOKEN_FILE")
+          else
+            LAST_REFRESH=$(cat "$TOKEN_FILE")
+          fi
+
+          LAST_EPOCH=$(date -d "$LAST_REFRESH" +%s 2>/dev/null || date -u +%s)
+          NOW_EPOCH=$(date -u +%s)
+          DAYS_SINCE=$(( (NOW_EPOCH - LAST_EPOCH) / 86400 ))
+          DAYS_UNTIL_EXPIRY=$(( 60 - DAYS_SINCE ))
+
+          echo "Last token refresh: $LAST_REFRESH"
+          echo "Days since refresh: $DAYS_SINCE"
+          echo "Days until expiry:  $DAYS_UNTIL_EXPIRY"
+
+          if [ "$DAYS_UNTIL_EXPIRY" -le 14 ]; then
+            echo "::warning::LinkedIn access token expires in $DAYS_UNTIL_EXPIRY days. Run the publish workflow or manually refresh."
+            echo "NEEDS_REMINDER=true" >> $GITHUB_ENV
+            echo "DAYS_LEFT=$DAYS_UNTIL_EXPIRY" >> $GITHUB_ENV
+          else
+            echo "Token is still valid for $DAYS_UNTIL_EXPIRY days. No action needed."
+          fi
+
+      - name: Create reminder issue
+        if: env.NEEDS_REMINDER == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list --label "token-reminder" --state open --json number --jq 'length')
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "Reminder issue already open. Skipping."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "LinkedIn access token expires in ${{ env.DAYS_LEFT }} days" \
+            --body "The LinkedIn access token will expire in approximately **${{ env.DAYS_LEFT }} days**.
+
+          ## How to renew (takes ~30 seconds)
+
+          1. Make sure your \`.env\` file has \`LINKEDIN_CLIENT_ID\` and \`LINKEDIN_CLIENT_SECRET\`
+          2. Run the setup script with auto-secret:
+          \`\`\`bash
+          cd linkedin-auto-poster
+          source .venv/bin/activate  # Mac/Linux
+          # .venv\Scripts\activate   # Windows
+          python scripts/linkedin_setup.py --set-secret
+          \`\`\`
+          3. This will:
+             - Open your browser for LinkedIn authorization
+             - Capture the new token automatically
+             - Verify it works (checks your LinkedIn profile)
+             - Set the \`LINKEDIN_ACCESS_TOKEN\` GitHub Secret
+             - Update your local \`.env\` file
+
+          4. Verify from GitHub: go to **Actions > LinkedIn Auth Check > Run workflow**
+
+          ## Why this is needed
+          LinkedIn access tokens expire every **60 days**. Your app tier may not support programmatic refresh tokens, so browser authorization may be required.
+
+          This issue was created automatically by the token-reminder workflow." \
+            --label "token-reminder" \
+            --assignee "${{ github.repository_owner }}"
