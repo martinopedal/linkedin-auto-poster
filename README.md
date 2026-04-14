@@ -573,13 +573,23 @@ The `token-reminder.yml` workflow creates a GitHub issue when your token is with
 
 ## Security
 
-- No secrets in code  - everything via environment variables or GitHub Secrets
+- No secrets in code - everything via environment variables or GitHub Secrets
+- Branch protection on `main` - no direct pushes, all changes via PR
 - Content validation catches PII, customer names, monetary amounts, credentials
 - SSRF protection on research tools (private IP blocking)
 - SHA-pinned GitHub Actions where possible
 - Prompt injection protection with XML-style data delimiters
 - URL domain warnings for unapproved content sources
 - File guard on publish: only `drafts/*.md` changes trigger posting
+
+### Branch protection note
+
+This repo has branch protection enabled on `main` (no force push, no deletion). All changes go through PRs.
+
+If you fork this for personal use in a **private repo**, you may want to relax branch protection since the GitHub Actions bot needs to push state files (seen.json, published.json) to main. Options:
+- Add `github-actions[bot]` as a bypass actor in your ruleset
+- Use the `state` branch approach (this repo's workflow already does this)
+- Disable branch protection entirely if you're the only contributor
 
 ## Contributing
 
