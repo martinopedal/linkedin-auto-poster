@@ -207,6 +207,8 @@ on:
 
 Push the change. The workflow will now run automatically on weekday mornings.
 
+> **Tip:** Before enabling the schedule, test with a manual run first. Go to **Actions** → **Fetch and Draft** → **Run workflow** → **Run workflow**. Check the output to make sure feeds are fetched and drafts are generated correctly.
+
 #### d. Create the `approve-post` label
 
 Go to your repo → **Issues** → **Labels** → **New label**:

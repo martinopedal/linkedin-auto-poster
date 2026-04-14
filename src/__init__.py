@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 def _file_lock(path, timeout=30):
     """Simple file-based lock for cross-process state safety."""
     lock_path = Path(str(path) + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     start = _time.monotonic()
     while True:
         try:
