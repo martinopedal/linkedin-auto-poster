@@ -24,3 +24,7 @@ build/
 # IDE
 .vscode/
 .idea/
+
+# Squad state (if initialized)
+.squad/
+
