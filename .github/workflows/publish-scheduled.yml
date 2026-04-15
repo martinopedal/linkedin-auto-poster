@@ -1,0 +1,50 @@
+# NOTE: This workflow requires LinkedIn secrets (LINKEDIN_CLIENT_ID,
+# LINKEDIN_CLIENT_SECRET, LINKEDIN_ACCESS_TOKEN) to publish posts.
+# Configure secrets in repo Settings → Secrets before enabling.
+name: Publish Scheduled Posts
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour, check for due posts
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-due:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Restore state
+        run: |
+          if git fetch origin state 2>/dev/null; then
+            git checkout origin/state -- data/ 2>/dev/null || true
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Publish due posts
+        env:
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+        run: python main.py publish-scheduled
+
+      - name: Push state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && exit 0
+          git commit -m "state: publish-scheduled $(date -u +%Y-%m-%d)"
+          git push origin HEAD:refs/heads/state --force

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -332,6 +333,10 @@ def publish(config: str, drafts_dir: str, dry_run: bool) -> None:
 
         draft_id = post.metadata.get("draft_id", md_file.stem)
 
+        # Label-based approval: if the publish workflow was triggered,
+        # the PR was merged with approve-post label. All drafts should publish.
+        # Frontmatter publish:false is no longer checked.
+
         # Schedule gate: skip drafts scheduled for the future
         scheduled_for = post.metadata.get("scheduled_for", "")
         if scheduled_for:
@@ -367,6 +372,10 @@ def publish(config: str, drafts_dir: str, dry_run: bool) -> None:
         text = post.content
         source_url = post.metadata.get("source_url", "")
 
+        # Ensure proper line breaks for LinkedIn rendering
+        text = re.sub(r'([.!?])([A-Z])', r'\1\n\n\2', text)
+        text = re.sub(r'([^\n])\n(- )', r'\1\n\n\2', text)
+
         if effective_dry_run:
             click.echo(f"  DRY RUN: {draft_id} ({len(text)} chars)")
             click.echo("  --- Post body ---")
@@ -386,7 +395,6 @@ def publish(config: str, drafts_dir: str, dry_run: bool) -> None:
                 title = post.metadata.get("source_title", post.metadata.get("topic_title", draft_id))
 
                 # Extract topic tags and tools from the post body
-                import re
                 hashtags = re.findall(r"#(\w+)", text)
                 tools = [t for t in ["AKS", "Terraform", "Bicep", "Kubernetes", "Foundry", "Sentinel", "Defender"]
                          if t.lower() in text.lower()]
@@ -550,12 +558,11 @@ def _group_repos_by_week(repos: list[dict]) -> dict[tuple[int, int], list[dict]]
     return groups
 
 
-def _is_current_week_ready(today: None = None) -> bool:
+def _is_current_week_ready(today=None) -> bool:
     """Current week is only ready to draft on Friday or later."""
     from datetime import date as _date
 
-    if today is None:
-        today = _date.today()
+    today = today or _date.today()
     return today.weekday() >= 4  # Friday = 4
 
 
@@ -739,6 +746,64 @@ def email_digest(config: str) -> None:
         click.echo("Digest sent successfully")
     else:
         click.echo("Digest not sent (check EMAIL_RECIPIENTS and SMTP config)")
+
+
+@main.command(name="publish-scheduled")
+@click.option("--config", default="config.yaml")
+@click.option("--drafts-dir", default="drafts")
+@click.option("--dry-run", is_flag=True)
+def publish_scheduled(config: str, drafts_dir: str, dry_run: bool) -> None:
+    """Publish posts that are due from the schedule queue."""
+    from src.publish_queue import get_due_posts, mark_failed, mark_published
+
+    due = get_due_posts()
+    if not due:
+        click.echo("No scheduled posts due.")
+        return
+
+    click.echo(f"Found {len(due)} scheduled post(s) due")
+
+    for entry in due:
+        draft_path = Path(entry["draft_path"])
+        if not draft_path.exists():
+            click.echo(f"  Draft not found: {draft_path}")
+            mark_failed(entry["draft_id"], "Draft file not found")
+            continue
+
+        click.echo(f"  Publishing: {entry['draft_id']}")
+        if dry_run:
+            click.echo(f"    DRY RUN: would publish {draft_path}")
+            continue
+
+        try:
+            import frontmatter
+
+            from src import StateStore
+            from src.linkedin.client import LinkedInClient
+
+            post = frontmatter.load(str(draft_path))
+            body = post.content.strip()
+
+            # Ensure proper line breaks for LinkedIn rendering
+            body = re.sub(r'([.!?])([A-Z])', r'\1\n\n\2', body)
+            body = re.sub(r'([^\n])\n(- )', r'\1\n\n\2', body)
+
+            client = LinkedInClient()
+            client.ensure_access_token()
+            urn = client.create_post(body)
+
+            store = StateStore()
+            store.mark_published(
+                entry["draft_id"],
+                urn,
+                source_url=post.metadata.get("source_url", ""),
+                summary=f"{post.metadata.get('title', '')}: {body[:150]}",
+            )
+            mark_published(entry["draft_id"])
+            click.echo(f"    Published: {urn}")
+        except Exception as e:
+            mark_failed(entry["draft_id"], str(e))
+            click.echo(f"    Failed: {e}")
 
 
 @main.command()

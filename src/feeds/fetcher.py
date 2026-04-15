@@ -85,10 +85,20 @@ def extract_categories(entry: dict) -> list[str]:
     return categories
 
 
+_DEFAULT_HEADERS = {
+    "User-Agent": "linkedin-auto-poster/1.0 (RSS aggregator)",
+    "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+}
+
+
 def _fetch_feed(url: str, timeout: int = 30) -> feedparser.FeedParserDict:
     """Fetch a feed URL with timeout and retry, returning parsed feed."""
     with requests.Session() as session:
-        retries = Retry(total=2, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        session.headers.update(_DEFAULT_HEADERS)
+        retries = Retry(
+            total=3, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504],
+            respect_retry_after_header=True,
+        )
         session.mount("https://", HTTPAdapter(max_retries=retries))
         session.mount("http://", HTTPAdapter(max_retries=retries))
         try:
@@ -161,6 +171,17 @@ def _normalize_title_for_dedup(title: str) -> str:
     return t
 
 
+def _titles_are_similar(title_a: str, title_b: str, threshold: float = 0.6) -> bool:
+    """Check if two titles are near-duplicates using token-set Jaccard similarity."""
+    tokens_a = set(_normalize_title_for_dedup(title_a).split())
+    tokens_b = set(_normalize_title_for_dedup(title_b).split())
+    if not tokens_a or not tokens_b:
+        return False
+    intersection = tokens_a & tokens_b
+    union = tokens_a | tokens_b
+    return len(intersection) / len(union) >= threshold
+
+
 def fetch_all_feeds(feeds: list[dict]) -> list[NewsItem]:
     """Fetch all configured feeds and return combined, deduplicated items.
 
@@ -174,6 +195,7 @@ def fetch_all_feeds(feeds: list[dict]) -> list[NewsItem]:
     seen_urls: set[str] = set()
     seen_titles: set[str] = set()
     seen_normalized: set[str] = set()
+    seen_titles_list: list[str] = []  # raw titles for fuzzy comparison
 
     for feed_cfg in feeds:
         try:
@@ -196,9 +218,18 @@ def fetch_all_feeds(feeds: list[dict]) -> list[NewsItem]:
             if norm_title in seen_normalized:
                 logger.debug("Skipping fuzzy duplicate: %s", item.title)
                 continue
+            # Fuzzy check against all previously seen titles
+            is_fuzzy_dup = any(
+                _titles_are_similar(item.title, seen_title)
+                for seen_title in seen_titles_list
+            )
+            if is_fuzzy_dup:
+                logger.debug("Skipping fuzzy-similar duplicate: %s", item.title)
+                continue
             seen_urls.add(item.normalized_url)
             seen_titles.add(item.title_hash)
             seen_normalized.add(norm_title)
+            seen_titles_list.append(item.title)
             all_items.append(item)
 
     logger.info("Total unique items across all feeds: %d", len(all_items))

@@ -99,6 +99,16 @@ def sanitize_draft(text: str) -> str:
     # Strip emoji characters
     text = EMOJI_PATTERN.sub("", text)
 
+    # Ensure proper paragraph breaks for LinkedIn rendering
+    # Add blank line before list items (handles both \n- and direct concatenation)
+    text = re.sub(r"([^\n])\n(- )", r"\1\n\n\2", text)
+    text = re.sub(r"([^\n\-])(- )", r"\1\n\n\2", text)
+    # Add blank line between paragraphs (sentence end followed by new sentence)
+    text = re.sub(r"([.!?])([A-Z])", r"\1\n\n\2", text)
+    text = re.sub(r"([.!?])\n([A-Z])", r"\1\n\n\2", text)
+    # Add blank line after colon-ending lines followed by list or paragraph
+    text = re.sub(r"(:\n)(- )", r":\n\n\2", text)
+
     # Normalize whitespace
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)

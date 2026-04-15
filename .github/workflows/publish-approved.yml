@@ -21,7 +21,11 @@ jobs:
   publish:
     if: >-
       github.event.pull_request.merged == true
-      && contains(github.event.pull_request.labels.*.name, 'approve-post')
+      && (
+        contains(github.event.pull_request.labels.*.name, 'approve-post')
+        || contains(github.event.pull_request.labels.*.name, 'post-tomorrow')
+        || contains(github.event.pull_request.labels.*.name, 'post-monday')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -38,6 +42,15 @@ jobs:
             echo "No state branch yet, using main's state files"
           fi
 
+      - name: Bootstrap state if missing
+        run: |
+          mkdir -p data
+          [ -f data/seen.json ]              || echo '[]'  > data/seen.json
+          [ -f data/published.json ]         || echo '[]'  > data/published.json
+          [ -f data/features.json ]          || echo '{}'  > data/features.json
+          [ -f data/known_repos.json ]       || echo '[]'  > data/known_repos.json
+          [ -f data/token_refreshed_at.txt ] || touch data/token_refreshed_at.txt
+
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
@@ -47,6 +60,30 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Detect posting action
+        id: action
+        run: |
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          APPROVE=$(echo "$LABELS" | jq -r 'map(select(. == "approve-post")) | length')
+          TOMORROW=$(echo "$LABELS" | jq -r 'map(select(. == "post-tomorrow")) | length')
+          MONDAY=$(echo "$LABELS" | jq -r 'map(select(. == "post-monday")) | length')
+
+          TOTAL=$((APPROVE + TOMORROW + MONDAY))
+          if [ "$TOTAL" -gt 1 ]; then
+            echo "ERROR: Multiple posting labels found. Use only one."
+            exit 1
+          fi
+
+          if [ "$APPROVE" -gt 0 ]; then
+            echo "action=publish-now" >> $GITHUB_OUTPUT
+          elif [ "$TOMORROW" -gt 0 ]; then
+            echo "action=queue" >> $GITHUB_OUTPUT
+            echo "label=post-tomorrow" >> $GITHUB_OUTPUT
+          elif [ "$MONDAY" -gt 0 ]; then
+            echo "action=queue" >> $GITHUB_OUTPUT
+            echo "label=post-monday" >> $GITHUB_OUTPUT
+          fi
 
       - name: Verify only draft files changed
         id: verify
@@ -72,8 +109,28 @@ jobs:
             echo "safe=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Queue for scheduled publishing
+        if: steps.action.outputs.action == 'queue' && steps.verify.outputs.safe == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          LABEL: ${{ steps.action.outputs.label }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # Find draft files from this PR
+          DRAFTS=$(gh api repos/$REPOSITORY/pulls/$PR_NUM/files --jq '.[].filename | select(startswith("drafts/"))')
+
+          for DRAFT in $DRAFTS; do
+            DRAFT_ID=$(basename "$DRAFT" .md)
+            python -c "
+          from src.publish_queue import queue_post
+          queue_post('$DRAFT_ID', '$DRAFT', $PR_NUM, '$LABEL')
+          print(f'Queued {\"$DRAFT_ID\"} with label {\"$LABEL\"}')
+          "
+          done
+
       - name: Publish approved drafts
-        if: steps.verify.outputs.safe == 'true'
+        if: steps.action.outputs.action == 'publish-now' && steps.verify.outputs.safe == 'true'
         id: publish
         env:
           LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
