@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LINKEDIN_USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
-LINKEDIN_POSTS_URL = "https://api.linkedin.com/rest/posts"
+LINKEDIN_POSTS_URL = "https://api.linkedin.com/v2/ugcPosts"
 LINKEDIN_API_VERSION = "202603"
 
 
@@ -130,26 +130,30 @@ class LinkedInClient:
         self.ensure_access_token()
         person_urn = self.get_person_urn()
 
-        payload: dict = {
-            "author": person_urn,
-            "commentary": text,
-            "visibility": visibility,
-            "distribution": {
-                "feedDistribution": "MAIN_FEED",
-                "targetEntities": [],
-                "thirdPartyDistributionChannels": [],
-            },
-            "lifecycleState": "PUBLISHED",
-            "isReshareDisabledByAuthor": False,
+        # Build UGC post payload (Share on LinkedIn product uses /v2/ugcPosts)
+        share_content: dict = {
+            "shareCommentary": {"text": text},
+            "shareMediaCategory": "NONE",
         }
 
         if article_url:
-            payload["content"] = {
-                "article": {
-                    "source": article_url,
-                    "title": article_title or "",
-                }
-            }
+            share_content["shareMediaCategory"] = "ARTICLE"
+            share_content["media"] = [{
+                "status": "READY",
+                "originalUrl": article_url,
+                "title": {"text": article_title or ""},
+            }]
+
+        payload: dict = {
+            "author": person_urn,
+            "lifecycleState": "PUBLISHED",
+            "specificContent": {
+                "com.linkedin.ugc.ShareContent": share_content,
+            },
+            "visibility": {
+                "com.linkedin.ugc.MemberNetworkVisibility": visibility,
+            },
+        }
 
         if dry_run:
             logger.info("DRY RUN: would post %d chars to LinkedIn", len(text))

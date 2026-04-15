@@ -89,7 +89,7 @@ class TestLinkedInClient:
         )
         responses.add(
             responses.POST,
-            "https://api.linkedin.com/rest/posts",
+            "https://api.linkedin.com/v2/ugcPosts",
             status=201,
             headers={"x-restli-id": "urn:li:share:123456"},
         )
@@ -109,7 +109,7 @@ class TestLinkedInClient:
         # First post attempt returns 401
         responses.add(
             responses.POST,
-            "https://api.linkedin.com/rest/posts",
+            "https://api.linkedin.com/v2/ugcPosts",
             status=401,
         )
         # Token refresh succeeds
@@ -122,7 +122,7 @@ class TestLinkedInClient:
         # Second post attempt succeeds
         responses.add(
             responses.POST,
-            "https://api.linkedin.com/rest/posts",
+            "https://api.linkedin.com/v2/ugcPosts",
             status=201,
             headers={"x-restli-id": "urn:li:share:789"},
         )
@@ -149,7 +149,7 @@ class TestLinkedInClient:
         )
         responses.add(
             responses.POST,
-            "https://api.linkedin.com/rest/posts",
+            "https://api.linkedin.com/v2/ugcPosts",
             status=201,
             headers={"x-restli-id": "urn:li:share:article1"},
         )
