@@ -147,21 +147,17 @@ click==8.3.2 \
     --hash=sha256:14162b8b3b3550a7d479eafa77dfd3c38d9dc8951f6f69c78913a8f9a7540fd5 \
     --hash=sha256:1924d2c27c5653561cd2cae4548d1406039cb79b858b747cfea24924bbc1616d
     # via -r requirements.in
-colorama==0.4.6 \
-    --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
-    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
-    # via click
 feedparser==6.0.12 \
     --hash=sha256:64f76ce90ae3e8ef5d1ede0f8d3b50ce26bcce71dd8ae5e82b1cd2d4a5f94228 \
     --hash=sha256:6bbff10f5a52662c00a2e3f86a38928c37c48f77b3c511aedcd51de933549324
     # via -r requirements.in
-github-copilot-sdk==0.2.2 \
-    --hash=sha256:06cf4c14acba2a32d28adae85c26b2b6324c1d29d8cf57c7eb73babcdc052558 \
-    --hash=sha256:19a2ae280b550fbc4fcdce8293afe4dc4a822ec987ee353ce6a7d218577a5b3b \
-    --hash=sha256:75bcd2ed3cc1b6a63c140c3c86850b9fb97b8d595a238f26be67db54bf037c6b \
-    --hash=sha256:7d76badbed12e012a811552e91f29a79bdca3e597fd876869d313399fd27c5ad \
-    --hash=sha256:887553330d92b266d45cbde5d6d480809471ae23c5f0e3762a7b73ff2c75e34c \
-    --hash=sha256:a5a679a8afcec901092855c9abd906d06e83407b54008a78a8e980f44464a2d2
+github-copilot-sdk==0.3.0 \
+    --hash=sha256:7e241d9b00ebf8bb4d10b2d6101c75fcef38de04d144d729e07fa48394270ee1 \
+    --hash=sha256:93b07c46f60cebbbb003d5bddba22eab886849b1d052b98037b52b6434a5bc07 \
+    --hash=sha256:b591546d789f9f8243fb59ca71b08cb0bb1dbec818fbef060c3830c6787de2c8 \
+    --hash=sha256:c5712d57a2c6291b805c79e039c55c48d858034b1a37fc8e1653925403a028e9 \
+    --hash=sha256:ed8f27989158824c754d7febb473bdf25744a1e6bc07a06f114f7e7deebd2c22 \
+    --hash=sha256:f4d98a67b8f038885ddd38bd7033d1ac20c3010f04c72ee0fc74ba4984b69ffa
     # via -r requirements.in
 idna==3.11 \
     --hash=sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea \
