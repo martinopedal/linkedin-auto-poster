@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import urlparse
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -20,7 +21,13 @@ def fetch_article_text(url: str, timeout: int = 15) -> str | None:
     Returns cleaned text up to MAX_ARTICLE_LENGTH chars,
     or None if fetch fails.
     """
-    if not url or not url.startswith("https://"):
+    if not url:
+        return None
+    
+    # Validate URL structure with urlparse (SSRF protection)
+    parsed = urlparse(url)
+    if parsed.scheme != 'https' or not parsed.netloc:
+        logger.warning("Rejected non-HTTPS or malformed URL: %s", url)
         return None
 
     with requests.Session() as session:
