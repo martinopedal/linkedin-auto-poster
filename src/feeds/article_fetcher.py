@@ -23,7 +23,7 @@ def fetch_article_text(url: str, timeout: int = 15) -> str | None:
     """
     if not url:
         return None
-    
+
     # Validate URL structure with urlparse (SSRF protection)
     parsed = urlparse(url)
     if parsed.scheme != 'https' or not parsed.netloc:
