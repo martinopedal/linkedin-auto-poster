@@ -159,9 +159,9 @@ github-copilot-sdk==0.2.2 \
     --hash=sha256:887553330d92b266d45cbde5d6d480809471ae23c5f0e3762a7b73ff2c75e34c \
     --hash=sha256:a5a679a8afcec901092855c9abd906d06e83407b54008a78a8e980f44464a2d2
     # via -r requirements.in
-idna==3.11 \
-    --hash=sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea \
-    --hash=sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902
+idna==3.15 \
+    --hash=sha256:048adeaf8c2d788c40fee287673ccaa74c24ffd8dcf09ffa555a2fbb59f10ac8 \
+    --hash=sha256:ca962446ea538f7092a95e057da437618e886f4d349216d2b1e294abfdb65fdc
     # via requests
 pydantic==2.13.1 \
     --hash=sha256:9557ecc2806faaf6037f85b1fbd963d01e30511c48085f0d573650fdeaad378a \
