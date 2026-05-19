@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   check-token-age:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, personal, linux, x64]
     permissions:
       contents: read
       issues: write
