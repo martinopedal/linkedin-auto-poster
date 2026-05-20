@@ -28,7 +28,7 @@ jobs:
         || contains(github.event.pull_request.labels.*.name, 'post-tomorrow')
         || contains(github.event.pull_request.labels.*.name, 'post-monday')
       )
-    runs-on: [self-hosted, personal, linux, x64]
+    runs-on: ${{ fromJSON(vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","linux","x64","personal"]') }}
     environment: production
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6

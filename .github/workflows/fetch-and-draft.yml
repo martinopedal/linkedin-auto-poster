@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   fetch-and-draft:
-    runs-on: [self-hosted, personal, linux, x64]
+    runs-on: ${{ fromJSON(vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","linux","x64","personal"]') }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:

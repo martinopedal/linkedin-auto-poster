@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   dependency-audit:
-    runs-on: [self-hosted, personal, linux, x64]
+    runs-on: ${{ fromJSON(vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","linux","x64","personal"]') }}
     permissions:
       contents: read
     steps:
