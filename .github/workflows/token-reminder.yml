@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   check-token-age:
-    runs-on: ${{ fromJSON(vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","linux","x64","personal"]') }}
+    runs-on: ${{ fromJSON(vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","personal-linux"]') }}
     permissions:
       contents: read
       issues: write
