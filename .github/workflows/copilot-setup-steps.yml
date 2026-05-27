@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   copilot-setup-steps:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, personal-linux]
     permissions:
       contents: read
 
