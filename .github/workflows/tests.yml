@@ -9,9 +9,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  decide-runner:
+    uses: martinopedal/github-runners-alz-corp-cookbook/.github/workflows/decide-runner.yml@v1
+    with:
+      self-hosted-labels: ${{ vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","personal-linux"]' }}
+      fallback-runner: 'ubuntu-latest'
+      safe-label: 'safe-to-test-on-self-hosted'
+
   test:
-    runs-on: ${{ fromJSON(vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","personal-linux"]') }}
+    needs: decide-runner
+    runs-on: ${{ fromJSON(needs.decide-runner.outputs.runner-labels) }}
     permissions:
       contents: read
     steps:
