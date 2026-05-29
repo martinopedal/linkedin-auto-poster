@@ -17,7 +17,7 @@ jobs:
   decide-runner:
     uses: martinopedal/github-runners-alz-corp-cookbook/.github/workflows/decide-runner.yml@v1
     with:
-      self-hosted-labels: ${{ vars.RUNS_ON_LINUX_PERSONAL || '["self-hosted","personal-linux"]' }}
+      self-hosted-labels: ${{ vars.RUNS_ON_LINUX_PUBLIC || '["self-hosted","public-linux"]' }}
       fallback-runner: 'ubuntu-latest'
       safe-label: 'safe-to-test-on-self-hosted'
 
